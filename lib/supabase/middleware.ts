@@ -1,9 +1,19 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+// Paths that don't require a signed-in user.
+const PUBLIC_PATHS = ["/", "/login", "/signup"];
+
+function isPublicPath(pathname: string) {
+  if (PUBLIC_PATHS.includes(pathname)) return true;
+  if (pathname.startsWith("/auth/")) return true; // e.g. /auth/callback
+  return false;
+}
+
 /**
- * Refreshes the Supabase auth session on every request so server
- * components always see an up-to-date session. Wired up in middleware.ts.
+ * Refreshes the Supabase auth session on every request and enforces
+ * route protection: signed-out users get bounced to /login, signed-in
+ * users get bounced away from /login and /signup to /dashboard.
  */
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -32,7 +42,32 @@ export async function updateSession(request: NextRequest) {
   // IMPORTANT: avoid writing logic between createServerClient and
   // getUser(). A simple mistake could make it very hard to debug issues
   // with users being randomly logged out.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { pathname } = request.nextUrl;
+  const isAuthPage = pathname === "/login" || pathname === "/signup";
+
+  if (!user && !isPublicPath(pathname)) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/login";
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie);
+    });
+    return redirectResponse;
+  }
+
+  if (user && isAuthPage) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/dashboard";
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie);
+    });
+    return redirectResponse;
+  }
 
   return supabaseResponse;
 }

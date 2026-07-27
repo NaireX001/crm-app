@@ -72,7 +72,18 @@ middleware.ts           Refreshes the Supabase auth session on every request
 - [x] Next.js + TypeScript + App Router + Tailwind scaffolded
 - [x] Project structure (app/components/lib) in place
 - [x] Supabase client/server/admin helpers wired to your project
-- [ ] Database schema (contacts, companies, deals, pipeline stages, activities, tasks)
-- [ ] Auth (login/signup, role-based access)
-- [ ] Core UI screens (dashboard, contacts, deals/pipeline, companies, tasks)
+- [x] Database schema (contacts, companies, deals, pipeline stages, activities, tasks) — see `supabase/schema.sql`
+- [x] Auth (login/signup, role-based access) — email/password via Supabase Auth, routes protected in `middleware.ts`
+- [x] Core UI screens — dashboard (real data), contacts (list/search/detail/activities/tasks), companies (list/detail), deals (kanban pipeline, drag or dropdown to change stage), tasks (list, complete/delete)
 - [ ] Deploy to Vercel
+
+## Auth notes
+
+- New signups default to the `sales_rep` role. To make your own account an admin, run in the Supabase SQL Editor:
+  ```sql
+  update public.profiles set role = 'admin' where email = 'you@example.com';
+  ```
+- By default, Supabase requires email confirmation before a new user can log in. For local dev, either:
+  - Confirm via the email Supabase sends (check spam), or
+  - In Supabase Dashboard -> Authentication -> Providers -> Email, turn off "Confirm email" to skip this during development.
+- `/dashboard` (and anything else outside `/`, `/login`, `/signup`) is protected — signed-out users get redirected to `/login` automatically.
