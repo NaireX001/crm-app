@@ -1,4 +1,5 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/types/database.types";
 
 /**
  * SERVER-ONLY Supabase client using the service_role key.
@@ -15,7 +16,7 @@ export function createAdminClient() {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set");
   }
 
-  return createSupabaseClient(
+  return createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     {
