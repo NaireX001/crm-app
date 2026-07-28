@@ -24,6 +24,10 @@ do $$ begin
   create type task_status as enum ('pending', 'completed');
 exception when duplicate_object then null; end $$;
 
+do $$ begin
+  create type task_priority as enum ('low', 'medium', 'high');
+exception when duplicate_object then null; end $$;
+
 -- -----------------------------------------------------------------------------
 -- profiles
 -- One row per auth.users row. Holds the role used for access control.
@@ -66,6 +70,10 @@ create table if not exists public.contacts (
   company_id uuid references public.companies (id) on delete set null,
   tags text[] not null default '{}',
   notes text,
+  custom_fields jsonb not null default '{}'::jsonb,
+  dnd_email boolean not null default false,
+  dnd_sms boolean not null default false,
+  dnd_call boolean not null default false,
   owner_id uuid references public.profiles (id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -73,6 +81,7 @@ create table if not exists public.contacts (
 
 create index if not exists contacts_company_id_idx on public.contacts (company_id);
 create index if not exists contacts_owner_id_idx on public.contacts (owner_id);
+create index if not exists contacts_tags_idx on public.contacts using gin (tags);
 
 -- -----------------------------------------------------------------------------
 -- pipeline_stages
@@ -139,6 +148,7 @@ create table if not exists public.tasks (
   description text,
   due_date date,
   status task_status not null default 'pending',
+  priority task_priority not null default 'medium',
   assigned_to uuid references public.profiles (id) on delete set null,
   contact_id uuid references public.contacts (id) on delete cascade,
   deal_id uuid references public.deals (id) on delete cascade,
@@ -241,10 +251,14 @@ alter table public.activities enable row level security;
 alter table public.tasks enable row level security;
 
 -- ---- profiles -----------------------------------------------------------
+-- Any signed-in teammate can read the basic profile directory (id/name/
+-- email/role) — needed for "assign to", "follow this contact", etc. This
+-- does NOT expose contacts/deals/tasks data, only who's on the team.
 drop policy if exists "profiles: self and admin can read" on public.profiles;
-create policy "profiles: self and admin can read"
+drop policy if exists "profiles: any signed-in user can read" on public.profiles;
+create policy "profiles: any signed-in user can read"
   on public.profiles for select
-  using (id = auth.uid() or public.is_admin());
+  using (auth.uid() is not null);
 
 drop policy if exists "profiles: self and admin can update" on public.profiles;
 create policy "profiles: self and admin can update"
@@ -401,6 +415,162 @@ drop policy if exists "tasks: delete own or admin" on public.tasks;
 create policy "tasks: delete own or admin"
   on public.tasks for delete
   using (assigned_to = auth.uid() or public.is_admin());
+
+-- =============================================================================
+-- Migration: add `priority` to tasks if this schema was already applied
+-- before this column existed. Safe to re-run.
+-- =============================================================================
+alter table public.tasks
+  add column if not exists priority task_priority not null default 'medium';
+
+-- =============================================================================
+-- Migration: add `custom_fields` to contacts if this schema was already
+-- applied before this column existed. Safe to re-run.
+-- =============================================================================
+alter table public.contacts
+  add column if not exists custom_fields jsonb not null default '{}'::jsonb;
+
+-- =============================================================================
+-- Migration: add DND (Do Not Disturb) flags to contacts. Safe to re-run.
+-- =============================================================================
+alter table public.contacts
+  add column if not exists dnd_email boolean not null default false;
+alter table public.contacts
+  add column if not exists dnd_sms boolean not null default false;
+alter table public.contacts
+  add column if not exists dnd_call boolean not null default false;
+
+-- =============================================================================
+-- contact_followers — users who follow a contact for visibility, distinct
+-- from ownership. A follower does not need to be the owner.
+-- =============================================================================
+create table if not exists public.contact_followers (
+  contact_id uuid not null references public.contacts (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (contact_id, user_id)
+);
+
+alter table public.contact_followers enable row level security;
+
+drop policy if exists "contact_followers: visible to contact owner, follower, admin" on public.contact_followers;
+create policy "contact_followers: visible to contact owner, follower, admin"
+  on public.contact_followers for select
+  using (
+    user_id = auth.uid()
+    or public.is_admin()
+    or exists (
+      select 1 from public.contacts c
+      where c.id = contact_id and (c.owner_id = auth.uid() or public.is_admin())
+    )
+  );
+
+drop policy if exists "contact_followers: contact owner or admin can add" on public.contact_followers;
+create policy "contact_followers: contact owner or admin can add"
+  on public.contact_followers for insert
+  with check (
+    public.is_admin()
+    or exists (
+      select 1 from public.contacts c
+      where c.id = contact_id and c.owner_id = auth.uid()
+    )
+  );
+
+drop policy if exists "contact_followers: contact owner, follower, or admin can remove" on public.contact_followers;
+create policy "contact_followers: contact owner, follower, or admin can remove"
+  on public.contact_followers for delete
+  using (
+    user_id = auth.uid()
+    or public.is_admin()
+    or exists (
+      select 1 from public.contacts c
+      where c.id = contact_id and c.owner_id = auth.uid()
+    )
+  );
+
+-- =============================================================================
+-- contact_files — metadata for files uploaded to the "contact-files" Supabase
+-- Storage bucket. The actual file bytes live in Storage; this table just
+-- tracks what was uploaded, by whom, and links it to a contact.
+-- =============================================================================
+create table if not exists public.contact_files (
+  id uuid primary key default gen_random_uuid(),
+  contact_id uuid not null references public.contacts (id) on delete cascade,
+  storage_path text not null,
+  file_name text not null,
+  size_bytes bigint,
+  uploaded_by uuid references public.profiles (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists contact_files_contact_id_idx on public.contact_files (contact_id);
+
+alter table public.contact_files enable row level security;
+
+drop policy if exists "contact_files: read own or admin" on public.contact_files;
+create policy "contact_files: read own or admin"
+  on public.contact_files for select
+  using (
+    public.is_admin()
+    or exists (
+      select 1 from public.contacts c
+      where c.id = contact_id and c.owner_id = auth.uid()
+    )
+  );
+
+drop policy if exists "contact_files: insert own or admin" on public.contact_files;
+create policy "contact_files: insert own or admin"
+  on public.contact_files for insert
+  with check (
+    public.is_admin()
+    or exists (
+      select 1 from public.contacts c
+      where c.id = contact_id and c.owner_id = auth.uid()
+    )
+  );
+
+drop policy if exists "contact_files: delete own or admin" on public.contact_files;
+create policy "contact_files: delete own or admin"
+  on public.contact_files for delete
+  using (
+    public.is_admin()
+    or exists (
+      select 1 from public.contacts c
+      where c.id = contact_id and c.owner_id = auth.uid()
+    )
+  );
+
+-- =============================================================================
+-- saved_views ("Smart Lists") — a user's saved filter/sort combination for
+-- a given list screen (currently just contacts).
+-- =============================================================================
+create table if not exists public.saved_views (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.profiles (id) on delete cascade,
+  entity_type text not null default 'contacts',
+  name text not null,
+  filters jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists saved_views_owner_id_idx on public.saved_views (owner_id);
+
+alter table public.saved_views enable row level security;
+
+drop policy if exists "saved_views: owner or admin can read" on public.saved_views;
+create policy "saved_views: owner or admin can read"
+  on public.saved_views for select
+  using (owner_id = auth.uid() or public.is_admin());
+
+drop policy if exists "saved_views: owner can insert" on public.saved_views;
+create policy "saved_views: owner can insert"
+  on public.saved_views for insert
+  with check (owner_id = auth.uid());
+
+drop policy if exists "saved_views: owner or admin can delete" on public.saved_views;
+create policy "saved_views: owner or admin can delete"
+  on public.saved_views for delete
+  using (owner_id = auth.uid() or public.is_admin());
 
 -- =============================================================================
 -- Seed default pipeline stages (safe to re-run)

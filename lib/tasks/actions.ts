@@ -16,6 +16,7 @@ export async function createTask(formData: FormData) {
   const due_date = String(formData.get("due_date") ?? "") || null;
   const contact_id = String(formData.get("contact_id") ?? "") || null;
   const deal_id = String(formData.get("deal_id") ?? "") || null;
+  const priority = String(formData.get("priority") ?? "medium");
   const redirectTo = String(formData.get("redirect_to") ?? "/tasks");
 
   const { error } = await supabase.from("tasks").insert({
@@ -24,6 +25,7 @@ export async function createTask(formData: FormData) {
     due_date,
     contact_id,
     deal_id,
+    priority: priority as "low" | "medium" | "high",
     assigned_to: user.id,
   });
 

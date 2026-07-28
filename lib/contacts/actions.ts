@@ -84,3 +84,152 @@ export async function deleteContact(formData: FormData) {
   revalidatePath("/contacts");
   redirect("/contacts");
 }
+
+export async function updateContactCustomFields(formData: FormData) {
+  const supabase = await createClient();
+  const contactId = String(formData.get("contact_id") ?? "");
+  const keys = formData.getAll("field_key") as string[];
+  const values = formData.getAll("field_value") as string[];
+
+  const custom_fields: Record<string, string> = {};
+  keys.forEach((key, i) => {
+    const trimmedKey = key.trim();
+    if (trimmedKey) custom_fields[trimmedKey] = values[i] ?? "";
+  });
+
+  const { error } = await supabase
+    .from("contacts")
+    .update({ custom_fields })
+    .eq("id", contactId);
+
+  if (error) {
+    redirect(
+      `/contacts/${contactId}?error=${encodeURIComponent(error.message)}`
+    );
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  redirect(`/contacts/${contactId}?message=Custom fields saved`);
+}
+
+export async function updateContactOwner(formData: FormData) {
+  const supabase = await createClient();
+  const contactId = String(formData.get("contact_id") ?? "");
+  const ownerId = String(formData.get("owner_id") ?? "") || null;
+
+  const { error } = await supabase
+    .from("contacts")
+    .update({ owner_id: ownerId })
+    .eq("id", contactId);
+
+  if (error) {
+    redirect(
+      `/contacts/${contactId}?error=${encodeURIComponent(error.message)}`
+    );
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  revalidatePath("/contacts");
+  redirect(`/contacts/${contactId}?message=Owner updated`);
+}
+
+export async function updateContactDnd(formData: FormData) {
+  const supabase = await createClient();
+  const contactId = String(formData.get("contact_id") ?? "");
+
+  const dnd_email = formData.get("dnd_email") === "on";
+  const dnd_sms = formData.get("dnd_sms") === "on";
+  const dnd_call = formData.get("dnd_call") === "on";
+
+  const { error } = await supabase
+    .from("contacts")
+    .update({ dnd_email, dnd_sms, dnd_call })
+    .eq("id", contactId);
+
+  if (error) {
+    redirect(
+      `/contacts/${contactId}?error=${encodeURIComponent(error.message)}`
+    );
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  redirect(`/contacts/${contactId}?message=Do Not Disturb settings saved`);
+}
+
+export async function addFollower(formData: FormData) {
+  const supabase = await createClient();
+  const contactId = String(formData.get("contact_id") ?? "");
+  const userId = String(formData.get("user_id") ?? "");
+
+  if (!userId) {
+    redirect(`/contacts/${contactId}?error=${encodeURIComponent("Choose someone to follow this contact.")}`);
+  }
+
+  const { error } = await supabase
+    .from("contact_followers")
+    .insert({ contact_id: contactId, user_id: userId });
+
+  if (error) {
+    redirect(
+      `/contacts/${contactId}?error=${encodeURIComponent(error.message)}`
+    );
+  }
+
+  revalidatePath(`/contacts/${contactId}`);
+  redirect(`/contacts/${contactId}`);
+}
+
+export async function removeFollower(formData: FormData) {
+  const supabase = await createClient();
+  const contactId = String(formData.get("contact_id") ?? "");
+  const userId = String(formData.get("user_id") ?? "");
+
+  await supabase
+    .from("contact_followers")
+    .delete()
+    .eq("contact_id", contactId)
+    .eq("user_id", userId);
+
+  revalidatePath(`/contacts/${contactId}`);
+  redirect(`/contacts/${contactId}`);
+}
+
+/**
+ * Bulk actions below are called directly as functions from the client
+ * component (ContactsTable), not via <form action>, so they take plain
+ * arguments rather than FormData.
+ */
+
+export async function bulkDeleteContacts(ids: string[]) {
+  if (ids.length === 0) return;
+  const supabase = await createClient();
+  await supabase.from("contacts").delete().in("id", ids);
+  revalidatePath("/contacts");
+}
+
+export async function bulkTagContacts(ids: string[], tag: string) {
+  if (ids.length === 0 || !tag.trim()) return;
+  const supabase = await createClient();
+  const { data: rows } = await supabase
+    .from("contacts")
+    .select("id, tags")
+    .in("id", ids);
+
+  if (!rows) return;
+
+  await Promise.all(
+    rows.map((r) => {
+      const nextTags = Array.from(new Set([...(r.tags ?? []), tag.trim()]));
+      return supabase.from("contacts").update({ tags: nextTags }).eq("id", r.id);
+    })
+  );
+
+  revalidatePath("/contacts");
+}
+
+export async function bulkReassignContacts(ids: string[], newOwnerId: string) {
+  if (ids.length === 0 || !newOwnerId) return;
+  const supabase = await createClient();
+  await supabase.from("contacts").update({ owner_id: newOwnerId }).in("id", ids);
+  revalidatePath("/contacts");
+}

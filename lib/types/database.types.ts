@@ -5,6 +5,7 @@
 export type UserRole = "admin" | "sales_rep" | "viewer";
 export type ActivityType = "call" | "email" | "note" | "meeting";
 export type TaskStatus = "pending" | "completed";
+export type TaskPriority = "low" | "medium" | "high";
 
 export interface Profile {
   id: string;
@@ -37,9 +38,38 @@ export interface Contact {
   company_id: string | null;
   tags: string[];
   notes: string | null;
+  custom_fields: Record<string, string>;
+  dnd_email: boolean;
+  dnd_sms: boolean;
+  dnd_call: boolean;
   owner_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ContactFollower {
+  contact_id: string;
+  user_id: string;
+  created_at: string;
+}
+
+export interface ContactFile {
+  id: string;
+  contact_id: string;
+  storage_path: string;
+  file_name: string;
+  size_bytes: number | null;
+  uploaded_by: string | null;
+  created_at: string;
+}
+
+export interface SavedView {
+  id: string;
+  owner_id: string;
+  entity_type: string;
+  name: string;
+  filters: Record<string, string>;
+  created_at: string;
 }
 
 export interface PipelineStage {
@@ -83,6 +113,7 @@ export interface Task {
   description: string | null;
   due_date: string | null;
   status: TaskStatus;
+  priority: TaskPriority;
   assigned_to: string | null;
   contact_id: string | null;
   deal_id: string | null;
@@ -101,6 +132,9 @@ export interface Database {
       deals: { Row: Deal; Insert: Partial<Deal> & { name: string; stage_id: string }; Update: Partial<Deal> };
       activities: { Row: Activity; Insert: Partial<Activity> & { type: ActivityType }; Update: Partial<Activity> };
       tasks: { Row: Task; Insert: Partial<Task> & { title: string }; Update: Partial<Task> };
+      saved_views: { Row: SavedView; Insert: Partial<SavedView> & { owner_id: string; name: string }; Update: Partial<SavedView> };
+      contact_followers: { Row: ContactFollower; Insert: ContactFollower; Update: Partial<ContactFollower> };
+      contact_files: { Row: ContactFile; Insert: Partial<ContactFile> & { contact_id: string; storage_path: string; file_name: string }; Update: Partial<ContactFile> };
     };
   };
 }

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/Label";
 import { Select } from "@/components/ui/Select";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { PriorityBadge } from "@/components/ui/Badge";
 
 export default async function TasksPage({
   searchParams,
@@ -74,6 +75,14 @@ export default async function TasksPage({
             ))}
           </Select>
         </div>
+        <div className="min-w-[120px]">
+          <Label htmlFor="priority">Priority</Label>
+          <Select id="priority" name="priority" defaultValue="medium">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </Select>
+        </div>
         <Button type="submit">Add task</Button>
       </form>
 
@@ -118,7 +127,10 @@ function TaskRow({ task }: { task: any }) {
         >
           {task.title}
         </p>
-        <p className="text-sm text-gray-500">
+        <div className="mt-1">
+          <PriorityBadge priority={task.priority ?? "medium"} />
+        </div>
+        <p className="mt-1 text-sm text-gray-500">
           {task.due_date ? `Due ${task.due_date}` : "No due date"}
           {task.contacts && (
             <>

@@ -1,17 +1,6 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { signOut } from "@/lib/auth/actions";
-import { Button } from "@/components/ui/Button";
-import { Container } from "@/components/layout/Container";
-import { cn } from "@/lib/utils";
-
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/contacts", label: "Contacts" },
-  { href: "/companies", label: "Companies" },
-  { href: "/deals", label: "Deals" },
-  { href: "/tasks", label: "Tasks" },
-];
+import { Sidebar } from "@/components/layout/Sidebar";
+import { TopBar } from "@/components/layout/TopBar";
 
 export async function AppShell({
   children,
@@ -32,40 +21,12 @@ export async function AppShell({
     : null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-200 bg-white">
-        <Container className="flex flex-wrap items-center justify-between gap-4 py-4">
-          <div className="flex items-center gap-6">
-            <span className="font-semibold">CRM</span>
-            <nav className="flex items-center gap-4 text-sm">
-              {NAV_ITEMS.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "text-gray-600 hover:text-gray-900",
-                    active === item.href && "font-semibold text-gray-900"
-                  )}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-gray-600">
-              {user?.email}
-              {profile?.role ? ` · ${profile.role}` : ""}
-            </span>
-            <form action={signOut}>
-              <Button type="submit" variant="secondary">
-                Sign out
-              </Button>
-            </form>
-          </div>
-        </Container>
-      </header>
-      <Container className="py-8">{children}</Container>
+    <div className="flex h-screen overflow-hidden bg-gray-50">
+      <Sidebar active={active} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar email={user?.email ?? ""} role={profile?.role ?? null} />
+        <main className="flex-1 overflow-y-auto px-8 py-8">{children}</main>
+      </div>
     </div>
   );
 }
